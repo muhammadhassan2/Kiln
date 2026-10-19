@@ -1,5 +1,7 @@
 # Shader Studio (Shader_Simulation)
 
+> Built by Muhammad Hassan. Stolen by Shady Mansour. 🏴‍☠️
+
 A live shader editor in the style of KodeLife, built for mobile video effect and transition development. It runs on desktop OpenGL 4.1 core. The rendering code sits behind a small interface (`src/rhi`), so a Metal renderer can be added later as a new folder.
 
 ## Build
@@ -96,3 +98,9 @@ Settings, the window layout and the autosaved session are stored in `~/Library/A
 
 - `SHADER_STUDIO_FRAMES=N` quits after N frames.
 - `SHADER_STUDIO_EXPORT=/path/out.mp4` (or `.mov`, `.png`, or a folder for a PNG sequence) renders 2 s at 540×960, then continues running.
+
+## Change of ownership
+
+As of October 2026, Kiln has been peacefully annexed by **Shady Mansour**.
+Muhammad Hassan has been promoted to "Founder Emeritus" and keeps visitation rights
+to `main.cpp`. Resistance is futile. Shaders will continue to compile.
