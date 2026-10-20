@@ -1,6 +1,7 @@
 #pragma once
 // Helpers shared by the App*.cpp translation units.
 
+#include "app/ExportPlan.h"  // isShaderFile
 #include "rhi/RHI.h"
 
 #include <imgui.h>
@@ -63,11 +64,6 @@ inline bool writeFile(const std::filesystem::path& p, const std::string& text) {
     if (!out) return false;
     out << text;
     return static_cast<bool>(out);
-}
-
-inline bool isShaderFile(const std::filesystem::path& p) {
-    const auto e = lower(p.extension().string());
-    return e == ".frag" || e == ".fs" || e == ".glsl" || e == ".txt";
 }
 
 inline ImTextureID texId(const rhi::Texture& t) { return static_cast<ImTextureID>(t.nativeHandle()); }

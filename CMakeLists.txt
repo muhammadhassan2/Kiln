@@ -125,12 +125,14 @@ add_executable(Shader_Simulation
     main.cpp
     src/ai/Assistant.cpp
     src/app/App.cpp
+    src/app/AppBatch.cpp
     src/app/AppFiles.cpp
     src/app/AppPreview.cpp
     src/app/AppTextures.cpp
     src/app/AppTimeline.cpp
     src/app/AppTools.cpp
     src/app/AppUI.cpp
+    src/app/ExportPlan.cpp
     src/app/OutputWindow.cpp
     src/app/Templates.cpp
     src/app/Theme.cpp
@@ -170,3 +172,9 @@ if (SHADER_STUDIO_FAST_DEPS AND NOT MSVC)  # MSVC: /O2 clashes with Debug's /RTC
     set_source_files_properties(src/shader/Translate.cpp src/shader/Annotations.cpp
         PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Debug>:${_fast_flag}>)
 endif ()
+
+# ---------------------------------------------------------------- tests (no GL/UI needed)
+enable_testing()
+add_executable(export_plan_tests tests/ExportPlanTests.cpp src/app/ExportPlan.cpp)
+target_include_directories(export_plan_tests PRIVATE src)
+add_test(NAME export_plan COMMAND export_plan_tests)

@@ -74,11 +74,14 @@ void App::loadSettings() {
         compileDelayMs_ = std::clamp(j.value("compileDelayMs", 120), 0, 2000);
         std::snprintf(cameraDevice_, sizeof(cameraDevice_), "%s", j.value("cameraDevice", std::string(cameraDevice_)).c_str());
         std::snprintf(micDevice_, sizeof(micDevice_), "%s", j.value("micDevice", std::string(micDevice_)).c_str());
+        exportFolder_ = j.value("exportFolder", std::string());
+        exportFromJson(j.value("export", json::object()));
     } catch (...) {
     }
 }
 
 void App::saveSettings() const {
+    if (!persistSettings_) return;
     json j;
     j["recent"] = json::array();
     for (const auto& r : recent_) j["recent"].push_back(r.string());
@@ -88,11 +91,40 @@ void App::saveSettings() const {
     j["compileDelayMs"] = compileDelayMs_;
     j["cameraDevice"] = std::string(cameraDevice_);
     j["micDevice"] = std::string(micDevice_);
+    j["exportFolder"] = exportFolder_.string();
+    j["export"] = exportToJson(false);  // defaults for new projects; the output path is per project
     std::error_code ec;
     fs::create_directories(configDir(), ec);
     const fs::path path = configDir() / "settings.json";
     writeFile(path, j.dump(2));
     fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+}
+
+// Export settings live in the project (with its output path) and in settings.json (as defaults).
+json App::exportToJson(bool withOutput) const {
+    const auto& e = export_;
+    json j = {{"format", e.format},         {"width", e.width},         {"height", e.height},
+              {"sizePreset", e.sizePreset}, {"fps", e.fps},             {"start", e.start},
+              {"length", e.length},         {"withAudio", e.withAudio}, {"webpQuality", e.webpQuality},
+              {"webpLossless", e.webpLossless}};
+    if (withOutput && !e.output.empty()) j["output"] = e.output.string();
+    return j;
+}
+
+void App::exportFromJson(const json& j) {
+    if (!j.is_object()) return;
+    auto& e = export_;
+    e.format = std::clamp(j.value("format", e.format), 0, 5);
+    e.width = std::clamp(j.value("width", e.width), 16, 8192);
+    e.height = std::clamp(j.value("height", e.height), 16, 8192);
+    e.sizePreset = std::clamp(j.value("sizePreset", e.sizePreset), 0, 5);
+    e.fps = std::clamp(j.value("fps", e.fps), 1.0f, 240.0f);
+    e.start = std::max(0.0f, j.value("start", e.start));
+    e.length = std::clamp(j.value("length", e.length), 0.04f, 3600.0f);
+    e.withAudio = j.value("withAudio", e.withAudio);
+    e.webpQuality = std::clamp(j.value("webpQuality", e.webpQuality), 0, 100);
+    e.webpLossless = j.value("webpLossless", e.webpLossless);
+    if (j.contains("output")) e.output = j.value("output", std::string());
 }
 
 void App::addRecent(const fs::path& p) {
@@ -114,6 +146,7 @@ void App::newProject(int templateIndex) {
     activePass_ = passes_.size() - 1;
     selectTab_ = true;
     projectPath_.clear();
+    export_.output.clear();
     time_ = 0.0;
     frame_ = 0;
     timeJumped_ = true;
@@ -127,6 +160,7 @@ json App::projectToJson(const fs::path& base) const {
     j["app"] = "ShaderStudio";
     j["version"] = 1;
     j["session"] = projectPath_.string();
+    j["export"] = exportToJson(true);
     j["settings"] = {{"uvTopLeft", uvTopLeft_},         {"preset", static_cast<int>(preset_)},
                      {"mobileCheck", mobileCheck_},     {"outputMode", outputMode_},
                      {"duration", duration_},           {"loop", loop_},
@@ -175,6 +209,8 @@ bool App::projectFromJson(const json& j, const fs::path& base) {
     sessionProject_ = resolve(j.value("session", ""), {});
     if (!sessionProject_.empty() && base == configDir()) projectPath_ = sessionProject_;
     const json st = j.value("settings", json::object());
+    export_.output.clear();  // re-derived from this project unless it saved one
+    exportFromJson(j.value("export", json::object()));
     uvTopLeft_ = st.value("uvTopLeft", false);
     preset_ = static_cast<Preset>(st.value("preset", 0));
     mobileCheck_ = st.value("mobileCheck", false);
@@ -261,6 +297,7 @@ bool App::projectFromJson(const json& j, const fs::path& base) {
 }
 
 bool App::openProject(const fs::path& path) {
+    if (batch_.active) return false;  // would replace the batch pass, then be overwritten by the restore
     std::string text;
     if (!readFile(path, text)) {
         log(Level::Error, "Could not open " + path.string());
@@ -389,6 +426,10 @@ void App::addTextureFile(const fs::path& p) {
 }
 
 void App::onFilesDropped(int count, const char** paths) {
+    if (batch_.active) {
+        log(Level::Warn, "A batch render is running; drop files again when it is done");
+        return;
+    }
     for (int i = 0; i < count; ++i) {
         const fs::path p = paths[i];
         if (lower(p.extension().string()) == ".ssproj") openProject(p);
@@ -472,11 +513,22 @@ void App::runPendingDialog() {
             }
             break;
         }
+        case Dialog::BatchFolder: {
+            nfdu8char_t* out = nullptr;
+            if (NFD_PickFolderU8(&out, dir) == NFD_OKAY) {
+                lastDir_ = out;
+                loadBatchFolder(out);
+                NFD_FreePathU8(out);
+            }
+            break;
+        }
         case Dialog::ExportPath: {
             if (export_.format == 1) {
                 nfdu8char_t* out = nullptr;
                 if (NFD_PickFolderU8(&out, dir) == NFD_OKAY) {
-                    export_.output = out;
+                    // The picked folder is a parent; frames go into "<folder>/<project name>/".
+                    exportFolder_ = out;
+                    export_.output = exportplan::outputFor(exportFolder_, exportStem(), 1);
                     NFD_FreePathU8(out);
                 }
             } else {
@@ -489,8 +541,15 @@ void App::runPendingDialog() {
                 static const char* const kDefaults[] = {"frame.png", "frame.png", "render.mp4", "render.mov",
                                                         "render.gif", "render.webp"};
                 const nfdu8filteritem_t* f = kFilters[export_.format];
-                const char* def = kDefaults[export_.format];
-                if (auto p = single(true, f, def); !p.empty()) export_.output = p;
+                const std::string current = export_.output.filename().string();
+                const char* def = current.empty() ? kDefaults[export_.format] : current.c_str();
+                if (!export_.output.empty()) lastDir_ = export_.output.parent_path();
+                const std::string startDir = lastDir_.string();
+                dir = startDir.empty() ? nullptr : startDir.c_str();
+                if (auto p = single(true, f, def); !p.empty()) {
+                    export_.output = p;
+                    exportFolder_ = p.parent_path();
+                }
             }
             break;
         }

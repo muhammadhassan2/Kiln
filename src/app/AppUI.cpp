@@ -28,6 +28,7 @@ const char* const kAllWindows[] = {"Editor", "Preview", "Console", "Timeline", "
 void App::setupAutocomplete(TextEditor& e) { e.SetAutoCompleteConfig(&autocomplete_); }
 
 void App::handleShortcuts() {
+    if (batch_.active) return;  // the user's project is set aside while a batch renders
     if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
         if (ImGui::GetIO().KeyShift) compileAll("Shift+F5");
         else compilePass(activePass(), "F5");
@@ -106,7 +107,7 @@ void App::drawMenuBar() {
     ImGui::TextColored(col(colors::Accent), "Shader Studio");
     ImGui::Separator();
 
-    if (ImGui::BeginMenu("File")) {
+    if (ImGui::BeginMenu("File", !batch_.active)) {
         if (ImGui::BeginMenu("New from template")) {
             const auto& all = templates();
             for (size_t i = 0; i < all.size(); ++i) {

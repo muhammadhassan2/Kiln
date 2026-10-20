@@ -10,6 +10,7 @@
 #include <stb_image_write.h>
 
 #include <chrono>
+#include <future>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -20,14 +21,16 @@ using json = nlohmann::json;
 
 namespace {
 
-fs::path libraryDir() {
+fs::path documentsDir() {
 #if defined(_WIN32)
     const char* home = std::getenv("USERPROFILE");
 #else
     const char* home = std::getenv("HOME");
 #endif
-    return fs::path(home ? home : ".") / "Documents" / "ShaderStudio" / "Library";
+    return fs::path(home ? home : ".") / "Documents";
 }
+
+fs::path libraryDir() { return documentsDir() / "ShaderStudio" / "Library"; }
 
 std::string sanitize(std::string s) {
     for (auto& c : s)
@@ -58,12 +61,17 @@ const std::string& webpEncoder(const std::string& ffmpeg) {
 
 void App::drawExport() {
     if (!showExport_) return;
-    ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Export", &showExport_, ImGuiWindowFlags_NoDocking)) {
         ImGui::End();
         return;
     }
     auto& e = export_;
+    if (batch_.active || !batch_.items.empty()) {
+        drawBatch();
+        ImGui::End();
+        return;
+    }
     if (e.active) {
         ImGui::Text("Rendering frame %d / %d", e.frame, e.total);
         ImGui::ProgressBar(e.total ? static_cast<float>(e.frame) / e.total : 0.0f, ImVec2(-1, 0));
@@ -71,17 +79,24 @@ void App::drawExport() {
         ImGui::End();
         return;
     }
+    if (e.finishing.valid()) {
+        ImGui::Text("Finishing... ffmpeg is writing %s", e.output.filename().string().c_str());
+        ImGui::ProgressBar(-1.0f * static_cast<float>(ImGui::GetTime()), ImVec2(-1, 0), "");
+        ImGui::End();
+        return;
+    }
+    ensureExportOutput();
+
     static const char* kFormats[] = {"PNG (current frame)", "PNG sequence", "MP4 (H.264)", "MOV (ProRes 422 HQ)",
                                      "GIF (animated)", "WebP (animated)"};
     ImGui::SetNextItemWidth(220);
-    if (ImGui::Combo("Format", &e.format, kFormats, 6)) e.output.clear();
+    if (ImGui::Combo("Format", &e.format, kFormats, 6)) e.output = exportplan::withFormat(e.output, e.format);
 
     static const char* kSizes[] = {"Custom", "Current output", "1080 x 1920", "1920 x 1080", "1080 x 1080", "3840 x 2160"};
-    static int sizePreset = 2;
     ImGui::SetNextItemWidth(220);
-    if (ImGui::Combo("Size", &sizePreset, kSizes, 6)) {
+    if (ImGui::Combo("Size", &e.sizePreset, kSizes, 6)) {
         int w = e.width, h = e.height;
-        switch (sizePreset) {
+        switch (e.sizePreset) {
             case 1: outputSize(w, h); break;
             case 2: w = 1080; h = 1920; break;
             case 3: w = 1920; h = 1080; break;
@@ -93,7 +108,7 @@ void App::drawExport() {
         e.height = h;
     }
     ImGui::SetNextItemWidth(220);
-    if (ImGui::InputInt2("Width x Height", &e.width)) sizePreset = 0;
+    if (ImGui::InputInt2("Width x Height", &e.width)) e.sizePreset = 0;
     e.width = std::clamp(e.width, 16, 8192);
     e.height = std::clamp(e.height, 16, 8192);
     if (e.format != 0) {
@@ -111,50 +126,113 @@ void App::drawExport() {
         ImGui::SameLine();
         ImGui::Checkbox("Lossless", &e.webpLossless);
     }
-    if (e.format == 4)
-        ImGui::TextDisabled("GIF has 256 colours and no audio; keep it short and small (e.g. 540 x 960, 15 fps).");
+
+    // Suggestions only: the user's numbers are never changed without the button.
+    if (auto r = exportplan::recommendFor(e.format, e.width, e.height, e.fps)) {
+        ImGui::TextDisabled("Recommended for %s: %g fps, %d x %d", kFormats[e.format], r->fps, r->width, r->height);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Use recommended")) {
+            e.fps = r->fps;
+            e.width = r->width;
+            e.height = r->height;
+            e.sizePreset = 0;
+        }
+    }
+    if (e.format == 4 && exportplan::gifTooHeavy(e.width, e.height, e.fps, e.length))
+        ImGui::TextColored(col(colors::Metal), "This GIF needs about %.1f GB of memory while encoding; lower the size, fps or length.",
+                           exportplan::gifMemoryGB(e.width, e.height, e.fps, e.length));
 
     ImGui::Separator();
-    ImGui::TextWrapped("%s", e.output.empty() ? "No output chosen" : e.output.string().c_str());
+    ImGui::TextWrapped("%s", e.output.string().c_str());
     if (ImGui::Button(e.format == 1 ? "Choose folder..." : "Choose file...")) pendingDialog_ = Dialog::ExportPath;
     ImGui::SameLine();
-    ImGui::BeginDisabled(e.output.empty());
     pushAccentButton();
-    if (ImGui::Button("Render")) startExport();
+    if (ImGui::Button("Render")) requestRender();
     popAccentButton();
-    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Batch...")) pendingDialog_ = Dialog::BatchFolder;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render every shader file in a folder into its renders/ subfolder");
     if (e.format >= 2 && media::findTool("ffmpeg").empty())
         ImGui::TextColored(col(colors::Error), "ffmpeg not found (macOS: brew install ffmpeg)");
     else if (e.format == 5 && webpEncoder(media::findTool("ffmpeg")).empty())
         ImGui::TextColored(col(colors::Error), "This ffmpeg has no WebP encoder (needs a build with libwebp)");
     if (!e.status.empty()) ImGui::TextWrapped("%s", e.status.c_str());
+
+    if (askOverwrite_) {
+        ImGui::OpenPopup("Already exists");
+        askOverwrite_ = false;
+    }
+    if (ImGui::BeginPopupModal("Already exists", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s already exists.", e.output.filename().string().c_str());
+        if (ImGui::Button("Overwrite")) {
+            ImGui::CloseCurrentPopup();
+            if (startExport()) saveSettings();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Keep both")) {
+            ImGui::CloseCurrentPopup();
+            e.output = exportplan::keepBoth(e.output);
+            if (startExport()) saveSettings();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
     ImGui::End();
 }
 
-void App::startExport() {
+std::string App::exportStem() const {
+    if (!projectPath_.empty()) return projectPath_.stem().string();
+    for (const auto& p : passes_)
+        if (p->isImage && !p->file.empty()) return p->file.stem().string();
+    return "untitled";
+}
+
+void App::ensureExportOutput() {
+    if (!export_.output.empty()) return;
+    const fs::path projectDir = projectPath_.empty() ? fs::path() : projectPath_.parent_path();
+    export_.output = exportplan::outputFor(exportplan::defaultFolder(exportFolder_, projectDir, documentsDir()),
+                                           exportStem(), export_.format);
+}
+
+void App::requestRender() {
+    exportFolder_ = export_.output.parent_path();
+    std::error_code ec;
+    if (fs::exists(export_.output, ec)) {
+        askOverwrite_ = true;
+        return;
+    }
+    if (startExport()) saveSettings();
+}
+
+bool App::startExport() {
     auto& e = export_;
     e.status.clear();
+    e.result = ExportResult::None;
+    const auto fail = [&](std::string why) {
+        e.status = std::move(why);
+        e.result = ExportResult::Failed;
+        log(Level::Error, "Export: " + e.status);
+        return false;
+    };
     if (e.format == 2) {  // H.264 needs even dimensions
         e.width &= ~1;
         e.height &= ~1;
     }
     e.total = e.format == 0 ? 1 : std::max(1, static_cast<int>(std::lround(e.length * e.fps)));
     e.frame = 0;
-    if (e.format == 1) {
-        std::error_code ec;
-        fs::create_directories(e.output, ec);
-    }
+    // Render into "<output>.part" and rename only when complete, so a cancel or crash never leaves a
+    // broken file under the real name or destroys an older good render.
+    e.part = exportplan::partPath(e.output);
+    exportplan::discardPart(e.part);  // leftover from an earlier crash
+    std::error_code ec;
+    fs::create_directories(e.output.parent_path(), ec);
+    if (e.format == 1) fs::create_directories(e.part, ec);
     if (e.format >= 2) {
         const std::string ffmpeg = media::findTool("ffmpeg");
-        if (ffmpeg.empty()) {
-            e.status = "ffmpeg not found.";
-            return;
-        }
-        if (e.format == 5 && webpEncoder(ffmpeg).empty()) {
-            e.status = "This ffmpeg has no WebP encoder; install a build with libwebp (e.g. winget install Gyan.FFmpeg).";
-            log(Level::Error, e.status);
-            return;
-        }
+        if (ffmpeg.empty()) return fail("ffmpeg not found.");
+        if (e.format == 5 && webpEncoder(ffmpeg).empty())
+            return fail("This ffmpeg has no WebP encoder; install a build with libwebp (e.g. winget install Gyan.FFmpeg).");
         char size[32], rate[32];
         std::snprintf(size, sizeof(size), "%dx%d", e.width, e.height);
         std::snprintf(rate, sizeof(rate), "%.4f", e.fps);
@@ -186,13 +264,14 @@ void App::startExport() {
                                      "-compression_level", "4", "-loop", "0"});
         if (!audio.empty()) args.insert(args.end(), {"-c:a", e.format == 2 ? "aac" : "pcm_s16le"});
         // Cap the output length instead of -shortest: ffmpeg must keep reading stdin until we close it.
-        args.insert(args.end(), {"-t", std::to_string(e.length), e.output.string()});
+        // The muxer is named explicitly because the ".part" name hides the extension.
+        static const char* kMuxers[] = {"", "", "mp4", "mov", "gif", "webp"};
+        args.insert(args.end(), {"-t", std::to_string(e.length), "-f", kMuxers[e.format], e.part.string()});
         e.encoder = std::make_unique<media::Process>();
         if (!e.encoder->start(args, media::Process::Pipe::WriteStdin, false,
                               (media::tempDir() / "export.log").string())) {
-            e.status = "Could not start ffmpeg.";
             e.encoder.reset();
-            return;
+            return fail("Could not start ffmpeg.");
         }
     }
     e.savedTime = time_;
@@ -206,10 +285,16 @@ void App::startExport() {
         for (auto& t : p->targets) device_->clear(*t);
     textures_->beginExport(e.start, e.fps);
     log(Level::Info, "Export started: " + e.output.string());
+    return true;
 }
 
 void App::stepExport() {
     auto& e = export_;
+    const auto stop = [&](std::string why) {
+        e.status = std::move(why);
+        e.result = ExportResult::Failed;
+        finishExport(true);
+    };
     const auto begin = std::chrono::steady_clock::now();
     while (e.active && e.frame < e.total) {
         time_ = e.start + e.frame / static_cast<double>(e.fps);
@@ -218,32 +303,23 @@ void App::stepExport() {
         textures_->exportFrame(timelineTime());
         renderFrame();
         Pass& img = imagePass();
-        if (!img.program) {
-            e.status = "The Image pass has no compiled shader.";
-            finishExport(true);
-            return;
-        }
+        if (!img.program) return stop("The Image pass has no compiled shader.");
         device_->readRGBA8(*img.targets[img.latest], e.pixels);
         const int w = img.targets[img.latest]->width(), h = img.targets[img.latest]->height();
         if (e.format <= 1) {
-            fs::path out = e.output;
+            fs::path out = e.part;
             if (e.format == 1) {
                 char name[32];
                 std::snprintf(name, sizeof(name), "frame_%05d.png", e.frame);
-                out = e.output / name;
+                out = e.part / name;
             }
             stbi_flip_vertically_on_write(1);
-            if (!stbi_write_png(out.string().c_str(), w, h, 4, e.pixels.data(), w * 4)) {
-                e.status = "Could not write " + out.string();
-                finishExport(true);
-                return;
-            }
+            if (!stbi_write_png(out.string().c_str(), w, h, 4, e.pixels.data(), w * 4))
+                return stop("Could not write " + out.string());
         } else if (!e.encoder->write(e.pixels.data(), e.pixels.size())) {
             std::string tail;
             readFile(media::tempDir() / "export.log", tail);
-            e.status = "ffmpeg stopped: " + tail.substr(tail.size() > 400 ? tail.size() - 400 : 0);
-            finishExport(true);
-            return;
+            return stop("ffmpeg stopped: " + tail.substr(tail.size() > 400 ? tail.size() - 400 : 0));
         }
         ++e.frame;
         if (std::chrono::steady_clock::now() - begin > std::chrono::milliseconds(30)) break;
@@ -253,28 +329,53 @@ void App::stepExport() {
 
 void App::finishExport(bool cancelled) {
     auto& e = export_;
-    int rc = 0;
-    if (e.encoder) {
-        e.encoder->closePipe();
-        rc = e.encoder->wait();
-        e.encoder.reset();
-    }
     textures_->endExport();
     time_ = e.savedTime;
     frame_ = e.savedFrame;
     playing_ = e.savedPlaying;
     timeJumped_ = true;
     e.active = false;
+    if (e.encoder) {
+        // ffmpeg may need seconds after the last frame (GIF palette, MP4 index); wait off the UI thread.
+        e.encoder->closePipe();
+        e.finishingCancelled = cancelled;
+        e.finishing = std::async(std::launch::async, [p = e.encoder.get()] { return p->wait(); });
+        return;
+    }
+    completeExport(cancelled, 0);
+}
+
+void App::pollExportFinish() {
+    auto& e = export_;
+    if (!e.finishing.valid() || e.finishing.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+    const int rc = e.finishing.get();
+    e.encoder.reset();
+    completeExport(e.finishingCancelled, rc);
+}
+
+void App::completeExport(bool cancelled, int rc) {
+    auto& e = export_;
+    std::string error;
     if (cancelled) {
+        exportplan::discardPart(e.part);
         if (e.status.empty()) e.status = "Cancelled.";
+        if (e.result == ExportResult::None) e.result = ExportResult::Cancelled;
         log(Level::Warn, "Export stopped: " + e.status);
     } else if (rc != 0) {
+        exportplan::discardPart(e.part);
         std::string tail;
         readFile(media::tempDir() / "export.log", tail);
         e.status = "ffmpeg failed: " + tail.substr(tail.size() > 400 ? tail.size() - 400 : 0);
+        e.result = ExportResult::Failed;
         log(Level::Error, e.status);
+    } else if (!exportplan::commitPart(e.part, e.output, error)) {
+        exportplan::discardPart(e.part);
+        e.status = error;
+        e.result = ExportResult::Failed;
+        log(Level::Error, "Export: " + error);
     } else {
         e.status = "Done: " + e.output.string();
+        e.result = ExportResult::Ok;
         log(Level::Ok, "Exported " + std::to_string(e.total) + " frame(s) to " + e.output.string());
     }
 }
