@@ -28,7 +28,7 @@ CMake downloads these dependencies the first time you configure, each pinned to 
 
 | Tool | Used for | macOS install |
 |---|---|---|
-| `ffmpeg` / `ffprobe` / `ffplay` | Video, camera and audio textures; MP4/ProRes export; hearing audio while you preview | `brew install ffmpeg` |
+| `ffmpeg` / `ffprobe` / `ffplay` | Video, camera and audio textures; MP4/ProRes/GIF/WebP export (WebP needs an ffmpeg built with libwebp); hearing audio while you preview | `brew install ffmpeg` |
 | `curl` | AI assistant | already installed |
 | Xcode (`xcrun metal`) | Checking that the converted Metal code compiles | Xcode |
 
@@ -50,7 +50,7 @@ CMake downloads these dependencies the first time you configure, each pinned to 
 | **Transition** | Choose the From and To textures (`u_from` / `u_to`, or `getFromColor` / `getToColor`), then scrub, play or keyframe `progress`. |
 | **Device presets** | Desktop / Android phone / iPhone. The phone presets set 1080×1920, top-left UV origin and mobile checking. |
 | **Mobile / Metal** | Mobile check: on every compile, glslang checks the original source as a phone would (GLSL ES), e.g. missing `precision`. Metal: GLSL → SPIR-V → MSL for iOS or macOS, with a button to check the result with Xcode's `metal` compiler. |
-| **Export** | PNG frame, PNG sequence, MP4 (H.264) or MOV (ProRes 422 HQ), at any size, fps and length. Audio from the first audio texture can be included. |
+| **Export** | PNG frame, PNG sequence, MP4 (H.264), MOV (ProRes 422 HQ), animated GIF (one optimised 256-colour palette for the whole clip) or animated WebP (lossy with a quality slider, or lossless; keeps alpha), at any size, fps and length. GIF and WebP loop forever. Audio from the first audio texture can be included in MP4 and MOV. |
 | **Preview** | View any pass, isolate a channel (R / G / B / A / luma), and use Inspect: a loupe that shows the exact pixel values. |
 | **Performance** | GPU time per pass (GL timer queries), CPU frame-time graph, and cost per megapixel. |
 | **History** | A snapshot is saved for every successful compile. Compare any snapshot with the current code side by side, and restore it (Undo also works). |
@@ -95,4 +95,4 @@ Settings, the window layout and the autosaved session are stored in `~/Library/A
 ## Testing without a screen (CI)
 
 - `SHADER_STUDIO_FRAMES=N` quits after N frames.
-- `SHADER_STUDIO_EXPORT=/path/out.mp4` (or `.mov`, `.png`, or a folder for a PNG sequence) renders 2 s at 540×960, then continues running.
+- `SHADER_STUDIO_EXPORT=/path/out.mp4` (or `.mov`, `.gif`, `.webp`, `.png`, or a folder for a PNG sequence) renders 2 s at 540×960, then continues running.

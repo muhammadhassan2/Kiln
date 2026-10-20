@@ -300,10 +300,12 @@ private:
     // export
     struct ExportJob {
         bool active = false;
-        int format = 2;  // 0 PNG frame, 1 PNG sequence, 2 MP4 (H.264), 3 MOV (ProRes 422 HQ)
+        int format = 2;  // 0 PNG frame, 1 PNG sequence, 2 MP4 (H.264), 3 MOV (ProRes 422 HQ), 4 GIF, 5 WebP
         int width = 1080, height = 1920;
         float fps = 30.0f, start = 0.0f, length = 5.0f;
         bool withAudio = true;
+        int webpQuality = 90;
+        bool webpLossless = false;
         fs::path output;
         int frame = 0, total = 0;
         std::unique_ptr<media::Process> encoder;

@@ -483,8 +483,13 @@ void App::runPendingDialog() {
                 static const nfdu8filteritem_t kPng[] = {{"PNG image", "png"}};
                 static const nfdu8filteritem_t kMp4[] = {{"MP4 video", "mp4"}};
                 static const nfdu8filteritem_t kMov[] = {{"QuickTime ProRes", "mov"}};
-                const nfdu8filteritem_t* f = export_.format == 0 ? kPng : export_.format == 2 ? kMp4 : kMov;
-                const char* def = export_.format == 0 ? "frame.png" : export_.format == 2 ? "render.mp4" : "render.mov";
+                static const nfdu8filteritem_t kGif[] = {{"Animated GIF", "gif"}};
+                static const nfdu8filteritem_t kWebp[] = {{"Animated WebP", "webp"}};
+                static const nfdu8filteritem_t* const kFilters[] = {kPng, kPng, kMp4, kMov, kGif, kWebp};
+                static const char* const kDefaults[] = {"frame.png", "frame.png", "render.mp4", "render.mov",
+                                                        "render.gif", "render.webp"};
+                const nfdu8filteritem_t* f = kFilters[export_.format];
+                const char* def = kDefaults[export_.format];
                 if (auto p = single(true, f, def); !p.empty()) export_.output = p;
             }
             break;
