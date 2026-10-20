@@ -46,7 +46,7 @@ private:
 // Returns the first fenced code block (```glsl ... ``` or ``` ... ```) in a reply, or empty.
 std::string extractCode(const std::string& reply);
 
-// The system prompt that explains Shader Studio's conventions to the model.
+// The system prompt that explains Kiln's conventions to the model.
 std::string systemPrompt();
 
 }  // namespace ai

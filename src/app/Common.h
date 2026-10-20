@@ -45,6 +45,35 @@ inline std::string nowString() {
     return buf;
 }
 
+// App identity. Projects are saved as .kiln; older .ssproj files (from "Shader Studio") still open.
+inline constexpr const char* kAppName = "Kiln";
+inline constexpr const char* kProjectExt = ".kiln";
+inline constexpr const char* kAutosaveName = "autosave.kiln";
+
+inline bool isProjectFile(const std::filesystem::path& p) {
+    std::string e = p.extension().string();
+    for (auto& c : e) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return e == ".kiln" || e == ".ssproj";
+}
+inline bool isAutosave(const std::filesystem::path& p) {
+    return p.filename() == "autosave.kiln" || p.filename() == "autosave.ssproj";
+}
+
+// Moves a folder from the app's old name to its new one the first time (settings, library).
+inline std::filesystem::path adoptLegacyFolder(const std::filesystem::path& dir, const std::filesystem::path& legacy) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::exists(dir, ec) && fs::exists(legacy, ec)) {
+        fs::create_directories(dir.parent_path(), ec);
+        fs::rename(legacy, dir, ec);
+        if (ec) {  // different volume or locked: copy instead and leave the old folder
+            ec.clear();
+            fs::copy(legacy, dir, fs::copy_options::recursive, ec);
+        }
+    }
+    return dir;
+}
+
 inline std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
     return s;

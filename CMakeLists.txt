@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
-project(Shader_Simulation LANGUAGES C CXX)
+project(Kiln VERSION 1.0.0 LANGUAGES C CXX)
+
+# App identity (change these three lines to rename the app).
+set(APP_NAME      "Kiln")
+set(APP_BUNDLE_ID "com.mhassan.kiln")
+set(APP_COPYRIGHT "Copyright © 2026 Muhammad Hassan")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -121,7 +126,7 @@ find_package(Threads REQUIRED)
 target_link_libraries(thirdparty PUBLIC Threads::Threads)
 
 # ---------------------------------------------------------------- app
-add_executable(Shader_Simulation
+add_executable(Kiln
     main.cpp
     src/ai/Assistant.cpp
     src/app/App.cpp
@@ -146,18 +151,27 @@ add_executable(Shader_Simulation
     src/shader/Translate.cpp
     src/textures/TextureLibrary.cpp)
 
-target_include_directories(Shader_Simulation PRIVATE src)
-target_link_libraries(Shader_Simulation PRIVATE thirdparty)
+if (APPLE)
+    # Compiled as Objective-C++ through the C++ compiler. Enabling the OBJCXX language for the
+    # whole project instead would make CMake build GLFW's .m files as Objective-C++, which fails.
+    target_sources(Kiln PRIVATE src/platform/MacOpenFiles.mm)
+    set_source_files_properties(src/platform/MacOpenFiles.mm PROPERTIES
+        LANGUAGE CXX
+        COMPILE_OPTIONS "-x;objective-c++")
+endif ()
+
+target_include_directories(Kiln PRIVATE src)
+target_link_libraries(Kiln PRIVATE thirdparty)
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(Shader_Simulation PRIVATE -Wall -Wextra)
+    target_compile_options(Kiln PRIVATE -Wall -Wextra)
 endif ()
 
 # Debug builds (CLion's default) still optimise the third-party code: ImGui, the code editor,
 # glslang and SPIRV-Cross are many times slower at -O0, which makes big shaders feel laggy
 # (typing, compiling, mobile check). Your own code under src/ stays fully debuggable.
-option(SHADER_STUDIO_FAST_DEPS "Optimise third-party libraries in Debug builds" ON)
-if (SHADER_STUDIO_FAST_DEPS AND NOT MSVC)  # MSVC: /O2 clashes with Debug's /RTC1 checks
+option(KILN_FAST_DEPS "Optimise third-party libraries in Debug builds" ON)
+if (KILN_FAST_DEPS AND NOT MSVC)  # MSVC: /O2 clashes with Debug's /RTC1 checks
     set(_fast_flag -O2)
     foreach (_t thirdparty glfw glslang SPIRV MachineIndependent GenericCodeGen OSDependent
                 glslang-default-resource-limits spirv-cross-core spirv-cross-glsl spirv-cross-msl nfd)
@@ -178,3 +192,37 @@ enable_testing()
 add_executable(export_plan_tests tests/ExportPlanTests.cpp src/app/ExportPlan.cpp)
 target_include_directories(export_plan_tests PRIVATE src)
 add_test(NAME export_plan COMMAND export_plan_tests)
+
+# ---------------------------------------------------------------- macOS app bundle
+# Builds "Kiln.app": double-click it, keep it in the Dock, open .kiln projects from Finder.
+#   Install into /Applications:  cmake --install <build-dir> --prefix /Applications
+#   Make a DMG installer:        cd <build-dir> && cpack
+if (APPLE)
+    configure_file(packaging/macos/Info.plist.in ${CMAKE_CURRENT_BINARY_DIR}/Info.plist @ONLY)
+    set(APP_ICON ${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/AppIcon.icns)
+    target_sources(Kiln PRIVATE ${APP_ICON})
+    set_source_files_properties(${APP_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    set_target_properties(Kiln PROPERTIES
+        MACOSX_BUNDLE TRUE
+        OUTPUT_NAME "${APP_NAME}"
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_BINARY_DIR}/Info.plist)
+    target_link_libraries(Kiln PRIVATE "-framework Cocoa")
+
+    # Sign the whole bundle (ad-hoc, no developer account needed) so macOS keeps camera and
+    # microphone permissions between builds and runs it like a normal app on this Mac.
+    add_custom_command(TARGET Kiln POST_BUILD
+        COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:Kiln>"
+        COMMENT "Signing ${APP_NAME}.app (ad-hoc)"
+        VERBATIM)
+
+    install(TARGETS Kiln BUNDLE DESTINATION .)
+
+    set(CPACK_GENERATOR DragNDrop)
+    set(CPACK_PACKAGE_NAME "${APP_NAME}")
+    set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+    set(CPACK_PACKAGE_FILE_NAME "Kiln-${PROJECT_VERSION}")
+    set(CPACK_DMG_VOLUME_NAME "${APP_NAME}")
+    include(CPack)
+else ()
+    install(TARGETS Kiln RUNTIME DESTINATION bin)
+endif ()

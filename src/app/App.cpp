@@ -71,8 +71,9 @@ App::App(GLFWwindow* window, Fonts fonts) : window_(window), fonts_(fonts) {
         assistant_.setApiKey(key);
 
     // Restore the last session (autosave) or start from the default template.
-    const fs::path autosave = configDir() / "autosave.ssproj";
+    fs::path autosave = configDir() / kAutosaveName;
     std::error_code ec;
+    if (!fs::exists(autosave, ec)) autosave = configDir() / "autosave.ssproj";  // from "Shader Studio"
     if (fs::exists(autosave, ec) && openProject(autosave)) {
         projectPath_ = sessionProject_;  // the autosave remembers which project it was
         log(Level::Info, "Restored last session");
@@ -81,8 +82,10 @@ App::App(GLFWwindow* window, Fonts fonts) : window_(window), fonts_(fonts) {
     }
     updateTitle();
 
-    // Headless smoke-test hook (CI): SHADER_STUDIO_EXPORT=/path/out.{png,mp4,mov,gif,webp} renders 2 s at 540x960.
-    if (const char* out = std::getenv("SHADER_STUDIO_EXPORT"); out && *out) {
+    // Headless smoke-test hook (CI): KILN_EXPORT=/path/out.{png,mp4,mov,gif,webp} renders 2 s at 540x960.
+    const char* out = std::getenv("KILN_EXPORT");
+    if (!out) out = std::getenv("SHADER_STUDIO_EXPORT");
+    if (out && *out) {
         export_.output = out;
         const std::string ext = lower(export_.output.extension().string());
         export_.format = ext == ".png"  ? 0
@@ -97,11 +100,14 @@ App::App(GLFWwindow* window, Fonts fonts) : window_(window), fonts_(fonts) {
         export_.fps = 30.0f;
         pendingExport_ = true;
     }
-    // Headless batch (CI): SHADER_STUDIO_BATCH=<folder> renders every shader there into renders/ as
-    // 540x960, 15 fps, 2 s (SHADER_STUDIO_BATCH_FORMAT = gif|webp|mp4|mov|png), then quits;
+    // Headless batch (CI): KILN_BATCH=<folder> renders every shader there into renders/ as
+    // 540x960, 15 fps, 2 s (KILN_BATCH_FORMAT = gif|webp|mp4|mov|png), then quits;
     // exit code 1 if any file failed. Leaves settings.json and the autosave untouched.
-    if (const char* dir = std::getenv("SHADER_STUDIO_BATCH"); dir && *dir) {
-        const char* f = std::getenv("SHADER_STUDIO_BATCH_FORMAT");
+    const char* dir = std::getenv("KILN_BATCH");
+    if (!dir) dir = std::getenv("SHADER_STUDIO_BATCH");
+    if (dir && *dir) {
+        const char* f = std::getenv("KILN_BATCH_FORMAT");
+        if (!f) f = std::getenv("SHADER_STUDIO_BATCH_FORMAT");
         const std::string fmt = lower(f ? f : "gif");
         export_.format = fmt == "webp" ? 5 : fmt == "mp4" ? 2 : fmt == "mov" ? 3 : fmt == "png" ? 1 : 4;
         export_.width = 540;
@@ -127,7 +133,8 @@ void App::shutdown() {
     std::error_code ec;
     if (persistSettings_) {
         fs::create_directories(configDir(), ec);
-        saveProject(configDir() / "autosave.ssproj");
+        saveProject(configDir() / kAutosaveName);
+        fs::remove(configDir() / "autosave.ssproj", ec);  // superseded by autosave.kiln
     }
     saveSettings();
     outputWindow_.close();

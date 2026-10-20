@@ -143,7 +143,7 @@ std::string extractCode(const std::string& reply) {
 }
 
 std::string systemPrompt() {
-    return R"(You write fragment shaders for Shader Studio, a live GLSL editor (desktop OpenGL 4.1 core).
+    return R"(You write fragment shaders for Kiln, a live GLSL editor (desktop OpenGL 4.1 core).
 Rules for code you return:
 - Return the complete shader in ONE fenced ```glsl code block, then at most 3 short sentences.
 - Prefer "#version 410 core" with "out vec4 fragColor;". Legacy GLSL ES 1.00 (varying, texture2D,

@@ -1,4 +1,4 @@
-# Shader Studio (Shader_Simulation)
+# Kiln
 
 A live shader editor in the style of KodeLife, built for mobile video effect and transition development. It runs on desktop OpenGL 4.1 core. The rendering code sits behind a small interface (`src/rhi`), so a Metal renderer can be added later as a new folder.
 
@@ -9,7 +9,7 @@ Open the folder in CLion and run it. To build from a terminal instead:
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-./build/Shader_Simulation [project.ssproj | shader.frag | media files...] [--template N] [--preset android|iphone|desktop]
+./build/Kiln [project.kiln | shader.frag | media files...] [--template N] [--preset android|iphone|desktop]
 ```
 
 CMake downloads these dependencies the first time you configure, each pinned to a fixed version (the first configure takes a few minutes):
@@ -32,11 +32,28 @@ CMake downloads these dependencies the first time you configure, each pinned to 
 | `curl` | AI assistant | already installed |
 | Xcode (`xcrun metal`) | Checking that the converted Metal code compiles | Xcode |
 
+## Install as a Mac app
+
+Every macOS build produces **`Kiln.app`**, with its own icon, in the build folder (for example `cmake-build-debug/` in CLion). It is signed for your Mac automatically.
+
+```bash
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release -j
+cmake --install build-release --prefix /Applications   # → /Applications/Kiln.app
+```
+
+Then open it from Launchpad or Spotlight and right-click its Dock icon → Options → Keep in Dock.
+
+- **Double-click a `.kiln` project** (or an older `.ssproj`) in Finder to open it. `.frag`, `.glsl`, `.fs`, `.fsh` and `.metal` files are listed under *Open With*. You can also drop files on the Dock icon.
+- **Camera and microphone textures** ask for permission the first time, like any Mac app.
+- **DMG to share:** `cd build-release && cpack` creates `Kiln-1.0.0.dmg`. The app is signed only for your own Mac, so on other Macs people must right-click → Open the first time. Signing it for everyone needs an Apple Developer ID and notarization.
+- **Rename the app:** change `APP_NAME`, `APP_BUNDLE_ID` and `APP_COPYRIGHT` at the top of `CMakeLists.txt`. The icon is `packaging/macos/AppIcon.icns`; regenerate it with `python3 packaging/macos/make_icon.py`.
+
 ## Features
 
 | Area | What you get |
 |---|---|
-| **Projects** | `.ssproj` (JSON) files store passes, textures, uniform values, keyframes, settings and version history. Use Save / Save As / Open Recent. Your session is restored automatically when you start the app again. |
+| **Projects** | `.kiln` (JSON) files (older `.ssproj` files open too) store passes, textures, uniform values, keyframes, settings and version history. Use Save / Save As / Open Recent. Your session is restored automatically when you start the app again. |
 | **Templates** | File → New from template: Basic, Video effect (GLSL ES), Transition, Shadertoy, Multipass feedback, Audio reactive. |
 | **Multipass** | Up to 4 buffer passes (Buffer A–D, 16-bit float) plus the Image pass. Read another pass with `u_bufferA`…`u_bufferD`. Read this pass's previous frame with `u_prev`. `iChannel0..3` can be pointed at any texture or buffer (iChannels… button). |
 | **GLSL dialects** | Modern `#version 330+` shaders run as written. Older GLSL ES 1.00 shaders (`varying`, `texture2D`, `gl_FragColor`), `#version 300 es`, Shadertoy `mainImage()` and gl-transitions `transition()` are converted automatically; error line numbers still match your file. `#include "file.glsl"` looks in the shader's folder, then the project folder, then `<config>/includes`. |
@@ -45,7 +62,7 @@ CMake downloads these dependencies the first time you configure, each pinned to 
 | **Video** | Video textures follow the timeline. Exports decode the video frame by frame, so every export frame uses exactly the right video frame. |
 | **Uniforms** | Found automatically when the shader compiles. Comments next to a uniform become controls: `@slider`, `@color`, `@toggle`, `@drag`, plus the gl-transitions `// = default` comments. Each uniform can be Manual, Time, Loop 0..1, Keyframes, or Video position (follows the first video's playback). |
 | **Defines** | Every `#ifndef NAME` + `#define NAME value` pair (e.g. `EFFECT_ID` in an uber-shader) appears at the top of the Uniforms panel. Changing it there recompiles at once (no typing delay; the mouse wheel steps numbers), and variants you already compiled are reused from a cache, so switching back is instant. Editing the `#define` line in the code takes over again. Saved with the project. |
-| **Compile speed** | Shader → typing delay sets the pause after your last keystroke before auto-compiling (default 120 ms; 0 = every keystroke). Debug builds still compile ImGui, the editor, glslang and SPIRV-Cross with `-O2` (`SHADER_STUDIO_FAST_DEPS`, on by default) so big shaders stay responsive. |
+| **Compile speed** | Shader → typing delay sets the pause after your last keystroke before auto-compiling (default 120 ms; 0 = every keystroke). Debug builds still compile ImGui, the editor, glslang and SPIRV-Cross with `-O2` (`KILN_FAST_DEPS`, on by default) so big shaders stay responsive. |
 | **Timeline** | Duration, loop and a scrub bar. Keyframe tracks show diamonds you can drag. Right-click a key to change its easing (Linear, Ease in, Ease out, Ease in-out, Step). Double-click a track to add a key. |
 | **Transition** | Choose the From and To textures (`u_from` / `u_to`, or `getFromColor` / `getToColor`), then scrub, play or keyframe `progress`. |
 | **Device presets** | Desktop / Android phone / iPhone. The phone presets set 1080×1920, top-left UV origin and mobile checking. |
@@ -55,7 +72,7 @@ CMake downloads these dependencies the first time you configure, each pinned to 
 | **Preview** | View any pass, isolate a channel (R / G / B / A / luma), and use Inspect: a loupe that shows the exact pixel values. |
 | **Performance** | GPU time per pass (GL timer queries), CPU frame-time graph, and cost per megapixel. |
 | **History** | A snapshot is saved for every successful compile. Compare any snapshot with the current code side by side, and restore it (Undo also works). |
-| **Library** | Saves projects with thumbnails to `~/Documents/ShaderStudio/Library`. Search them and click one to open it. |
+| **Library** | Saves projects with thumbnails to `~/Documents/Kiln/Library`. Search them and click one to open it. |
 | **Autocomplete** | GLSL keywords and built-ins, plus your uniforms and identifiers (pops up while typing; Ctrl+Space forces it). |
 | **Output window** | View → Output window shows the output windowed or full screen on any monitor (for projectors or VJ use). |
 | **AI assistant** | Uses the Claude API through `curl`: write a new shader, change the current pass, or explain and fix errors. Apply the result with one click. The key comes from `ANTHROPIC_API_KEY` or the panel; the model list is loaded from the API. |
@@ -91,11 +108,13 @@ src/app/                 App: passes, compiling, rendering (App.cpp), files & pr
                          second output window
 ```
 
-Settings, the window layout and the autosaved session are stored in `~/Library/Application Support/ShaderStudio` (macOS), `%APPDATA%/ShaderStudio` (Windows) or `~/.config/ShaderStudio` (Linux).
+Settings, the window layout and the autosaved session are stored in `~/Library/Application Support/Kiln` (macOS), `%APPDATA%/Kiln` (Windows) or `~/.config/Kiln` (Linux).
 
 ## Testing without a screen (CI)
 
-- `SHADER_STUDIO_FRAMES=N` quits after N frames.
-- `SHADER_STUDIO_EXPORT=/path/out.mp4` (or `.mov`, `.gif`, `.webp`, `.png`, or a folder for a PNG sequence) renders 2 s at 540×960, then continues running.
-- `SHADER_STUDIO_BATCH=<folder>` batch-renders every shader in that folder into `renders/` (540×960, 15 fps, 2 s; `SHADER_STUDIO_BATCH_FORMAT=gif|webp|mp4|mov|png`, default `gif`), then quits with exit code 1 if any file failed. It does not touch your settings or autosave.
+- `KILN_FRAMES=N` quits after N frames.
+- `KILN_EXPORT=/path/out.mp4` (or `.mov`, `.gif`, `.webp`, `.png`, or a folder for a PNG sequence) renders 2 s at 540×960, then continues running.
+- `KILN_BATCH=<folder>` batch-renders every shader in that folder into `renders/` (540×960, 15 fps, 2 s; `KILN_BATCH_FORMAT=gif|webp|mp4|mov|png`, default `gif`), then quits with exit code 1 if any file failed. It does not touch your settings or autosave.
 - `ctest --test-dir build -C Release` runs the unit tests for export naming, recommendations, the batch folder scan and the `.part` commits.
+
+(The older `SHADER_STUDIO_*` names still work as fallbacks.)

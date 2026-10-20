@@ -61,7 +61,7 @@ bool OutputWindow::open(GLFWwindow* share, int monitor) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-    window_ = glfwCreateWindow(mode ? mode->width : 1280, mode ? mode->height : 720, "Shader Studio — Output", target,
+    window_ = glfwCreateWindow(mode ? mode->width : 1280, mode ? mode->height : 720, "Kiln — Output", target,
                                share);
     if (!window_) return false;
     monitor_ = target ? monitor : -1;

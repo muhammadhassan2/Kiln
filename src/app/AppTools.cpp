@@ -30,7 +30,11 @@ fs::path documentsDir() {
     return fs::path(home ? home : ".") / "Documents";
 }
 
-fs::path libraryDir() { return documentsDir() / "ShaderStudio" / "Library"; }
+fs::path libraryDir() {
+    const fs::path docs = documentsDir();
+    static const fs::path dir = adoptLegacyFolder(docs / kAppName, docs / "ShaderStudio") / "Library";
+    return dir;
+}
 
 std::string sanitize(std::string s) {
     for (auto& c : s)
@@ -582,7 +586,7 @@ void App::refreshLibrary() {
     fs::create_directories(dir, ec);
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
         const auto ext = lower(entry.path().extension().string());
-        if (ext != ".ssproj" && ext != ".frag" && ext != ".glsl") continue;
+        if (ext != ".kiln" && ext != ".ssproj" && ext != ".frag" && ext != ".glsl") continue;
         LibraryItem item;
         item.name = entry.path().stem().string();
         item.path = entry.path();
@@ -618,7 +622,7 @@ void App::saveToLibrary(const std::string& rawName) {
     fs::create_directories(dir, ec);
     json j = projectToJson(dir);
     j["session"] = "";
-    if (!writeFile(dir / (name + ".ssproj"), j.dump(2))) {
+    if (!writeFile(dir / (name + kProjectExt), j.dump(2))) {
         log(Level::Error, "Could not save to library: " + dir.string());
         return;
     }
@@ -671,7 +675,7 @@ void App::drawLibrary() {
         if (item.thumb) clicked = ImGui::ImageButton("##t", texId(*item.thumb), ImVec2(cell, cell * 0.75f));
         else clicked = ImGui::Button(item.name.c_str(), ImVec2(cell + 8, cell * 0.75f + 8));
         if (clicked) {
-            if (item.path.extension() == ".ssproj") {
+            if (isProjectFile(item.path)) {
                 openProject(item.path);
                 projectPath_.clear();  // edit a copy; Save As to keep changes
                 updateTitle();
@@ -695,7 +699,7 @@ void App::drawLibrary() {
     if (library_.empty()) ImGui::TextDisabled("Empty. Save the current project with a name above.");
     if (!toDelete.empty()) {
         std::error_code ec;
-        for (const char* ext : {".ssproj", ".frag", ".glsl", ".png"}) fs::remove(libraryDir() / (toDelete + ext), ec);
+        for (const char* ext : {".kiln", ".ssproj", ".frag", ".glsl", ".png"}) fs::remove(libraryDir() / (toDelete + ext), ec);
         libraryDirty_ = true;
     }
     ImGui::End();

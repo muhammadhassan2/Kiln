@@ -5,7 +5,7 @@ namespace app {
 namespace {
 
 const char* kBasic = R"(#version 410 core
-// Shader Studio - live GLSL. Edits compile automatically (F5 forces it).
+// Kiln - live GLSL. Edits compile automatically (F5 forces it).
 // Built-ins: u_time, u_timeDelta, u_frame, u_resolution, u_mouse, u_texCount, u_bass/u_mid/u_high
 // Textures:  u_tex0 .. u_texN (or iChannel0..N) follow the Textures panel order.
 // UI hints:  // @slider min..max default   // @color #RRGGBB   // @toggle   // @drag speed

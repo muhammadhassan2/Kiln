@@ -1,8 +1,9 @@
-// Shader Studio — live GLSL editor
+// Kiln — live GLSL / Metal shader editor
 // GLFW + Dear ImGui (docking) + OpenGL 4.1 core behind a small RHI (src/rhi).
 
 #include "app/App.h"
 #include "app/Theme.h"
+#include "platform/OpenFiles.h"
 #include "rhi/gl/GLHeaders.h"
 
 #include <GLFW/glfw3.h>
@@ -16,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace {
 
@@ -35,6 +37,12 @@ int main(int argc, char** argv) {
     glfwSetErrorCallback(glfwError);
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
+    platform::installOpenFileHandler();  // Finder / Dock "open file" events (macOS)
+#if defined(__APPLE__)
+    // Keep the working directory: relative paths given on the command line must still resolve
+    // when the app runs from its .app bundle.
+    glfwInitHint(GLFW_COCOA_CHDIR_RESOURCES, GLFW_FALSE);
+#endif
     if (!glfwInit()) return EXIT_FAILURE;
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -45,7 +53,7 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
 #endif
 
-    GLFWwindow* window = glfwCreateWindow(1600, 960, "Shader Studio", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 960, "Kiln", nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         return EXIT_FAILURE;
@@ -85,12 +93,21 @@ int main(int argc, char** argv) {
         // Optional: open a shader / images passed on the command line.
         application.handleArgs(argc, argv);
 
-        // Smoke-test hook: SHADER_STUDIO_FRAMES=N quits after N frames (used by CI).
+        // Smoke-test hook: KILN_FRAMES=N quits after N frames (used by CI).
         int frameLimit = -1;
-        if (const char* f = std::getenv("SHADER_STUDIO_FRAMES")) frameLimit = std::atoi(f);
+        const char* f = std::getenv("KILN_FRAMES");
+        if (!f) f = std::getenv("SHADER_STUDIO_FRAMES");
+        if (f) frameLimit = std::atoi(f);
 
         while (!glfwWindowShouldClose(window) && !application.quitRequested() && frameLimit != 0 && !gStopRequested) {
             glfwPollEvents();
+            // Files opened from Finder or dropped on the Dock icon.
+            if (auto files = platform::takeOpenedFiles(); !files.empty()) {
+                std::vector<const char*> ptrs;
+                for (const auto& f : files) ptrs.push_back(f.c_str());
+                application.onFilesDropped(static_cast<int>(ptrs.size()), ptrs.data());
+                glfwFocusWindow(window);
+            }
             if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
                 glfwWaitEventsTimeout(0.1);
                 continue;

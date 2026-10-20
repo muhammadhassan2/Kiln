@@ -104,7 +104,7 @@ void App::drawUI() {
 
 void App::drawMenuBar() {
     if (!ImGui::BeginMainMenuBar()) return;
-    ImGui::TextColored(col(colors::Accent), "Shader Studio");
+    ImGui::TextColored(col(colors::Accent), kAppName);
     ImGui::Separator();
 
     if (ImGui::BeginMenu("File", !batch_.active)) {
@@ -522,6 +522,11 @@ void App::drawUniforms() {
         ImGui::Separator();
         drawDefines();
 
+        if (ImGui::Button("+ Add uniform")) openAddUniform();
+        ImGui::SetItemTooltip("Add a slider, toggle, colour or vector control.\nIt writes the uniform declaration into the current pass.");
+        drawAddUniformPopup();
+        drawUniformSettingsPopup();
+
         const auto uniforms = userUniforms();
         for (const auto* up : uniforms) {
             const auto& u = *up;
@@ -535,9 +540,9 @@ void App::drawUniforms() {
                                  : u.type == rhi::UniformType::Vec4 ? 4 : 1;
 
             ImGui::PushID(label);
-            const float driveW = 92.0f, secW = 60.0f, keyW = 34.0f;
+            const float driveW = 92.0f, secW = 60.0f, keyW = 34.0f, editW = 26.0f;
             const float labelW = ImGui::CalcTextSize(label).x + ImGui::GetStyle().ItemInnerSpacing.x;
-            const float extra = driveW + keyW + (v.drive == DriveLoop ? secW : 0.0f) + 3 * ImGui::GetStyle().ItemSpacing.x;
+            const float extra = driveW + keyW + editW + (v.drive == DriveLoop ? secW : 0.0f) + 4 * ImGui::GetStyle().ItemSpacing.x;
             ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x - labelW - extra));
 
             const bool driven = v.drive != DriveManual;
@@ -607,8 +612,18 @@ void App::drawUniforms() {
             }
             ImGui::SetItemTooltip("Add a keyframe at the current timeline time");
             ImGui::SameLine();
+            if (ImGui::Button("...", ImVec2(editW, 0))) openUniformSettings(u.name, static_cast<int>(u.type));
+            ImGui::SetItemTooltip("Change the slider range, default or control type, or remove this uniform");
+            ImGui::SameLine();
             ImGui::TextUnformatted(label);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) openUniformSettings(u.name, static_cast<int>(u.type));
             ImGui::PopID();
+        }
+        // Declared with a control comment but not read by the shader yet: GL drops unused uniforms.
+        for (const auto& name : unusedDeclaredUniforms()) {
+            ImGui::TextDisabled("%s", name.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("- added; use it in the code to get its control");
         }
         if (uniforms.empty())
             ImGui::TextDisabled("Declare a uniform to get a control, e.g.\nuniform float u_amount; // @slider 0..1 0.5");

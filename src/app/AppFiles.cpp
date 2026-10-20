@@ -1,4 +1,4 @@
-// Projects (.ssproj), shader files, app settings, native dialogs, templates, hot reload.
+// Projects (.kiln, older .ssproj), shader files, app settings, native dialogs, templates, hot reload.
 #include "app/App.h"
 
 #include "app/Common.h"
@@ -47,14 +47,16 @@ fs::path homeDir() {
 
 fs::path App::configDir() const {
 #if defined(__APPLE__)
-    return homeDir() / "Library" / "Application Support" / "ShaderStudio";
+    const fs::path base = homeDir() / "Library" / "Application Support";
 #elif defined(_WIN32)
-    if (const char* a = std::getenv("APPDATA")) return fs::path(a) / "ShaderStudio";
-    return homeDir() / "ShaderStudio";
+    const char* a = std::getenv("APPDATA");
+    const fs::path base = a ? fs::path(a) : homeDir();
 #else
-    if (const char* x = std::getenv("XDG_CONFIG_HOME")) return fs::path(x) / "ShaderStudio";
-    return homeDir() / ".config" / "ShaderStudio";
+    const char* x = std::getenv("XDG_CONFIG_HOME");
+    const fs::path base = x ? fs::path(x) : homeDir() / ".config";
 #endif
+    static const fs::path dir = adoptLegacyFolder(base / kAppName, base / "ShaderStudio");
+    return dir;
 }
 
 // ====================================================================== settings
@@ -157,7 +159,7 @@ void App::newProject(int templateIndex) {
 
 json App::projectToJson(const fs::path& base) const {
     json j;
-    j["app"] = "ShaderStudio";
+    j["app"] = kAppName;
     j["version"] = 1;
     j["session"] = projectPath_.string();
     j["export"] = exportToJson(true);
@@ -204,7 +206,8 @@ json App::projectToJson(const fs::path& base) const {
 }
 
 bool App::projectFromJson(const json& j, const fs::path& base) {
-    if (j.value("app", "") != "ShaderStudio") return false;
+    const std::string appId = j.value("app", "");
+    if (appId != kAppName && appId != "ShaderStudio") return false;
     // An autosave remembers which project it came from; includes resolve relative to that project.
     sessionProject_ = resolve(j.value("session", ""), {});
     if (!sessionProject_.empty() && base == configDir()) projectPath_ = sessionProject_;
@@ -307,7 +310,7 @@ bool App::openProject(const fs::path& path) {
     projectPath_ = path;  // set first: #include resolves relative to the project folder
     try {
         if (!projectFromJson(json::parse(text), path.parent_path())) {
-            log(Level::Error, path.filename().string() + " is not a Shader Studio project");
+            log(Level::Error, path.filename().string() + " is not a Kiln project");
             projectPath_ = previous;
             return false;
         }
@@ -316,7 +319,7 @@ bool App::openProject(const fs::path& path) {
         projectPath_ = previous;
         return false;
     }
-    if (path.filename() != "autosave.ssproj") log(Level::Info, "Opened project " + path.string());
+    if (!isAutosave(path)) log(Level::Info, "Opened project " + path.string());
     updateTitle();
     return true;
 }
@@ -326,14 +329,14 @@ bool App::saveProject(const fs::path& path) {
     for (auto& p : passes_)
         if (!p->file.empty()) saveShaderFromPass(*p, p->file);
     const fs::path previous = projectPath_;
-    if (path.filename() != "autosave.ssproj") projectPath_ = path;
+    if (!isAutosave(path)) projectPath_ = path;
     const bool ok = writeFile(path, projectToJson(path.parent_path()).dump(2));
     if (!ok) {
         projectPath_ = previous;
         log(Level::Error, "Could not write " + path.string());
         return false;
     }
-    if (path.filename() != "autosave.ssproj") {
+    if (!isAutosave(path)) {
         log(Level::Ok, "Saved project " + path.string());
         addRecent(path);
         updateTitle();
@@ -410,7 +413,7 @@ void App::pollFiles() {
 
 void App::updateTitle() {
     const std::string name = projectPath_.empty() ? "untitled" : projectPath_.filename().string();
-    glfwSetWindowTitle(window_, ("Shader Studio — " + name).c_str());
+    glfwSetWindowTitle(window_, (std::string(kAppName) + " — " + name).c_str());
 }
 
 void App::addTextureFile(const fs::path& p) {
@@ -432,7 +435,7 @@ void App::onFilesDropped(int count, const char** paths) {
     }
     for (int i = 0; i < count; ++i) {
         const fs::path p = paths[i];
-        if (lower(p.extension().string()) == ".ssproj") openProject(p);
+        if (isProjectFile(p)) openProject(p);
         else if (isShaderFile(p)) openShaderIntoPass(activePass(), p);
         else addTextureFile(p);
     }
@@ -441,6 +444,7 @@ void App::onFilesDropped(int count, const char** paths) {
 void App::handleArgs(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
+        if (a.rfind("-psn_", 0) == 0) continue;  // process serial number some macOS versions pass to apps
         if (a == "--template" && i + 1 < argc) {
             newProject(std::atoi(argv[++i]));
         } else if (a == "--preset" && i + 1 < argc) {
@@ -460,7 +464,8 @@ void App::runPendingDialog() {
     pendingDialog_ = Dialog::None;
     if (dialog == Dialog::None) return;
 
-    static const nfdu8filteritem_t kProject[] = {{"Shader Studio project", "ssproj"}};
+    static const nfdu8filteritem_t kProject[] = {{"Kiln project", "kiln,ssproj"}};
+    static const nfdu8filteritem_t kProjectSave[] = {{"Kiln project", "kiln"}};
     static const nfdu8filteritem_t kShader[] = {{"GLSL shader", "frag,fs,glsl,txt"}};
     static const nfdu8filteritem_t kMedia[] = {
         {"Images, video, audio", "png,jpg,jpeg,bmp,tga,gif,psd,hdr,mp4,mov,m4v,mkv,webm,avi,mp3,wav,m4a,aac,flac,ogg"}};
@@ -482,8 +487,8 @@ void App::runPendingDialog() {
             if (auto p = single(false, kProject, nullptr); !p.empty() && openProject(p)) addRecent(p);
             break;
         case Dialog::SaveProjectAs:
-            if (auto p = single(true, kProject, "project.ssproj"); !p.empty()) {
-                if (p.extension() != ".ssproj") p += ".ssproj";
+            if (auto p = single(true, kProjectSave, "project.kiln"); !p.empty()) {
+                if (p.extension() != kProjectExt) p += kProjectExt;
                 saveProject(p);
             }
             break;

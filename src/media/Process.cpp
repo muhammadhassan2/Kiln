@@ -220,7 +220,7 @@ fs::path tempDir() {
     std::error_code ec;
     fs::path t = fs::temp_directory_path(ec);
     if (ec) t = ".";
-    t /= "ShaderStudio";
+    t /= "Kiln";
     fs::create_directories(t, ec);
     return t;
 }
