@@ -97,6 +97,22 @@ App::App(GLFWwindow* window, Fonts fonts) : window_(window), fonts_(fonts) {
         export_.fps = 30.0f;
         pendingExport_ = true;
     }
+    // Headless batch (CI): SHADER_STUDIO_BATCH=<folder> renders every shader there into renders/ as
+    // 540x960, 15 fps, 2 s (SHADER_STUDIO_BATCH_FORMAT = gif|webp|mp4|mov|png), then quits;
+    // exit code 1 if any file failed. Leaves settings.json and the autosave untouched.
+    if (const char* dir = std::getenv("SHADER_STUDIO_BATCH"); dir && *dir) {
+        const char* f = std::getenv("SHADER_STUDIO_BATCH_FORMAT");
+        const std::string fmt = lower(f ? f : "gif");
+        export_.format = fmt == "webp" ? 5 : fmt == "mp4" ? 2 : fmt == "mov" ? 3 : fmt == "png" ? 1 : 4;
+        export_.width = 540;
+        export_.height = 960;
+        export_.fps = 15.0f;
+        export_.start = 0.0f;
+        export_.length = 2.0f;
+        persistSettings_ = false;
+        pendingBatch_ = dir;
+        batch_.quitWhenDone = true;
+    }
 }
 
 App::~App() { shutdown(); }
@@ -105,9 +121,14 @@ void App::shutdown() {
     static bool done = false;
     if (done) return;
     done = true;
+    abortBatchNow();  // restore the user's project before it is autosaved
+    if (export_.finishing.valid()) export_.finishing.wait();  // let ffmpeg finish the last export
+    pollExportFinish();
     std::error_code ec;
-    fs::create_directories(configDir(), ec);
-    saveProject(configDir() / "autosave.ssproj");
+    if (persistSettings_) {
+        fs::create_directories(configDir(), ec);
+        saveProject(configDir() / "autosave.ssproj");
+    }
     saveSettings();
     outputWindow_.close();
     textures_->clear();
@@ -412,6 +433,13 @@ void App::update() {
         pendingExport_ = false;
         startExport();
     }
+    if (!pendingBatch_.empty() && frame_ > 5) {
+        if (loadBatchFolder(pendingBatch_)) startBatch(false);
+        if (!batch_.active) quit_ = true;  // nothing to render
+        pendingBatch_.clear();
+    }
+    pollExportFinish();
+    if (batch_.active) stepBatch();
 
     const double now = glfwGetTime();
     timeDelta_ = now - lastClock_;
@@ -419,7 +447,7 @@ void App::update() {
 
     if (export_.active) {
         stepExport();
-    } else {
+    } else if (!batch_.active) {  // between batch jobs: no hot reload, edits or preview of the user's project
         if (playing_) {
             time_ += timeDelta_;
             ++frame_;

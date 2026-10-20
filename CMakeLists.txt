@@ -125,6 +125,7 @@ add_executable(Shader_Simulation
     main.cpp
     src/ai/Assistant.cpp
     src/app/App.cpp
+    src/app/AppBatch.cpp
     src/app/AppFiles.cpp
     src/app/AppPreview.cpp
     src/app/AppTextures.cpp

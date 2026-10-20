@@ -76,6 +76,7 @@ int main(int argc, char** argv) {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 410 core");
 
+    int exitCode = EXIT_SUCCESS;
     {
         app::App application(window, fonts);
         glfwSetWindowUserPointer(window, &application);
@@ -116,6 +117,7 @@ int main(int argc, char** argv) {
             if (frameLimit > 0) --frameLimit;
         }
         application.shutdown();  // autosave the session, stop media processes
+        exitCode = application.exitCode();
         glfwSetWindowUserPointer(window, nullptr);
     }
 
@@ -125,5 +127,5 @@ int main(int argc, char** argv) {
     NFD_Quit();
     glfwDestroyWindow(window);
     glfwTerminate();
-    return EXIT_SUCCESS;
+    return exitCode;
 }

@@ -17,6 +17,7 @@
 #include <array>
 #include <deque>
 #include <filesystem>
+#include <future>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -117,6 +118,9 @@ public:
     // Command line: shader/project/media paths, or --template <n>.
     void handleArgs(int argc, char** argv);
     bool quitRequested() const { return quit_; }
+    int exitCode() const { return exitCode_; }  // 1 when a headless batch had failures
+
+    enum class BatchStatus { Queued, Compiling, Rendering, Finishing, Done, Failed, Skipped, Exists, Cancelled };
     void shutdown();  // autosave + stop media
 
 private:
@@ -167,6 +171,8 @@ private:
     bool openProject(const fs::path& path);
     bool saveProject(const fs::path& path);
     nlohmann::json projectToJson(const fs::path& base) const;
+    nlohmann::json exportToJson(bool withOutput) const;
+    void exportFromJson(const nlohmann::json& j);
     bool projectFromJson(const nlohmann::json& j, const fs::path& base);
     bool openShaderIntoPass(Pass& p, const fs::path& path);
     bool saveShaderFromPass(Pass& p, const fs::path& path);
@@ -201,9 +207,24 @@ private:
 
     // ---- tools (AppTools.cpp)
     void drawExport();
-    void startExport();
+    bool startExport();  // false (and result = Failed) if it could not start
     void stepExport();
     void finishExport(bool cancelled);
+    void pollExportFinish();                       // every frame: commits once ffmpeg has exited
+    void completeExport(bool cancelled, int rc);   // commit or discard the .part, set result
+    bool exportBusy() const { return export_.active || export_.finishing.valid(); }
+    std::string exportStem() const;  // project name, else Image pass file name, else "untitled"
+    void ensureExportOutput();       // fills an empty output path from folder + stem + format
+    void requestRender();            // asks before overwriting, then starts the export
+    // ---- batch render (AppBatch.cpp)
+    bool loadBatchFolder(const fs::path& folder);
+    void startBatch(bool onlyFailed);
+    void stepBatch();      // every frame while a batch runs: one job at a time
+    void cancelBatch();
+    void abortBatchNow();  // on quit: cancel, wait for ffmpeg, restore the user's project
+    void endBatch();
+    void drawBatch();
+
     void drawProfiler();
     void drawHistory();
     void drawCrossCompile();
@@ -298,17 +319,23 @@ private:
     bool diffDirty_ = true;
 
     // export
+    enum class ExportResult { None, Ok, Failed, Cancelled };
     struct ExportJob {
         bool active = false;
         int format = 2;  // 0 PNG frame, 1 PNG sequence, 2 MP4 (H.264), 3 MOV (ProRes 422 HQ), 4 GIF, 5 WebP
         int width = 1080, height = 1920;
+        int sizePreset = 2;  // index into the Size combo; 0 = Custom
         float fps = 30.0f, start = 0.0f, length = 5.0f;
         bool withAudio = true;
         int webpQuality = 90;
         bool webpLossless = false;
-        fs::path output;
+        fs::path output;  // final path; the render goes to `part` and is renamed when complete
+        fs::path part;
         int frame = 0, total = 0;
         std::unique_ptr<media::Process> encoder;
+        std::future<int> finishing;  // encoder exit code while ffmpeg writes the end of the file
+        bool finishingCancelled = false;
+        ExportResult result = ExportResult::None;
         std::string status;
         double savedTime = 0.0;
         int savedFrame = 0;
@@ -316,6 +343,38 @@ private:
         std::vector<std::uint8_t> pixels;
     } export_;
     bool pendingExport_ = false;
+    fs::path exportFolder_;            // last folder an export went to (settings.json)
+    bool askOverwrite_ = false;        // open the "already exists" prompt next frame
+    bool persistSettings_ = true;      // false in headless batch runs: leave settings/autosave alone
+
+    // batch render
+    struct BatchItem {
+        fs::path source;
+        std::string outputStem;
+        bool enabled = true;
+        BatchStatus status = BatchStatus::Queued;
+        std::string message;  // first compile error or ffmpeg error
+    };
+    struct BatchJob {
+        bool active = false;
+        fs::path folder;
+        std::vector<BatchItem> items;
+        int current = -1;
+        bool overwrite = false;
+        bool cancelRequested = false;
+        bool quitWhenDone = false;  // headless SHADER_STUDIO_BATCH run
+        // The user's work, set aside while the batch runs.
+        std::vector<std::unique_ptr<Pass>> passes;
+        std::unordered_map<std::string, UniformState> uniforms;
+        std::vector<std::pair<std::string, std::string>> defines;
+        size_t activePass = 0;
+        float duration = 10.0f;
+        bool loop = true;
+        fs::path output;
+        bool withAudio = true;
+    } batch_;
+    fs::path pendingBatch_;  // SHADER_STUDIO_BATCH folder, started after the first frames
+    int exitCode_ = 0;
 
     // library
     struct LibraryItem {
@@ -342,7 +401,7 @@ private:
 
     // misc / dialogs
     enum class Dialog {
-        None, OpenProject, SaveProjectAs, OpenShader, SaveShaderAs, AddTextures, LinkPassFile, ExportPath,
+        None, OpenProject, SaveProjectAs, OpenShader, SaveShaderAs, AddTextures, LinkPassFile, ExportPath, BatchFolder,
     };
     Dialog pendingDialog_ = Dialog::None;
     fs::path lastDir_;
