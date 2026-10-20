@@ -137,6 +137,7 @@ add_executable(Kiln
     src/app/AppTimeline.cpp
     src/app/AppTools.cpp
     src/app/AppUI.cpp
+    src/app/AppUniforms.cpp
     src/app/ExportPlan.cpp
     src/app/OutputWindow.cpp
     src/app/Templates.cpp

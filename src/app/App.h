@@ -193,6 +193,13 @@ private:
     void drawConsole();
     void drawUniforms();
     void drawDefines();
+
+    // ---- add / edit uniform controls (AppUniforms.cpp)
+    void openAddUniform();
+    void drawAddUniformPopup();
+    void openUniformSettings(const std::string& name, int type);
+    void drawUniformSettingsPopup();
+    std::vector<std::string> unusedDeclaredUniforms() const;
     void drawOverlay();
     void setOverlay(bool on);
     void drawChannelPopup(Pass& p);
@@ -277,6 +284,32 @@ private:
     std::array<float, 4> mouse_{};
     std::string selectedTrack_;
     int selectedKey_ = -1;
+
+    // uniforms panel: "+ Add uniform" form and per-uniform settings popup
+    struct AddUniformForm {
+        bool open = false;
+        char name[64] = {};
+        int kind = 0;  // 0 slider, 1 int slider, 2 toggle, 3 color, 4 color+alpha, 5 vec2, 6 vec3
+        float range[2] = {0.0f, 1.0f};
+        float def = 0.5f;
+        int irange[2] = {0, 10};
+        int idef = 1;
+        bool toggle = true;
+        float color[4] = {1.0f, 0.6f, 0.3f, 1.0f};
+        float vec[3] = {0.0f, 0.0f, 0.0f};
+        float speed = 0.01f;
+        std::string error;
+    } addForm_;
+    struct UniformSettings {
+        bool open = false;
+        std::string name;
+        int type = 0;  // rhi::UniformType
+        int kind = 0;  // 0 slider, 1 drag, 2 color, 3 toggle
+        float range[2] = {0.0f, 1.0f};
+        float def = 0.0f;
+        float speed = 0.01f;
+        std::string error;
+    } uniformSettings_;
 
     // compile
     bool autoCompile_ = true;
