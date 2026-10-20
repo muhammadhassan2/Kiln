@@ -45,6 +45,11 @@ int runCapture(const std::vector<std::string>& argv, std::string& output, bool m
 // Locates a command-line tool: PATH first, then common install folders
 // (/opt/homebrew/bin, /usr/local/bin — GUI apps on macOS often don't inherit the shell PATH).
 std::string findTool(const std::string& name);
+// Every copy of a tool that can be found, PATH order first (Windows also checks winget, Scoop and
+// Chocolatey folders, so a tool installed while the app runs is found without a restart).
+std::vector<std::string> findToolCandidates(const std::string& name);
+// Makes findTool(name) return `path` (e.g. the one ffmpeg that has libwebp). Empty clears it.
+void setToolPath(const std::string& name, const std::string& path);
 
 std::filesystem::path tempDir();
 

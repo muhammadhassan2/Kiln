@@ -39,22 +39,6 @@ std::string sanitize(std::string s) {
     return s.empty() ? "untitled" : s;
 }
 
-// Animated WebP needs an ffmpeg built with libwebp (many minimal builds lack it). Returns the encoder
-// name, or "" when there is none. Cached: asking ffmpeg costs a process launch.
-const std::string& webpEncoder(const std::string& ffmpeg) {
-    static std::string checkedFor, encoder;
-    if (checkedFor != ffmpeg) {
-        checkedFor = ffmpeg;
-        encoder.clear();
-        std::string out;
-        if (!ffmpeg.empty() && media::runCapture({ffmpeg, "-hide_banner", "-encoders"}, out) == 0) {
-            if (out.find(" libwebp_anim ") != std::string::npos) encoder = "libwebp_anim";
-            else if (out.find(" libwebp ") != std::string::npos) encoder = "libwebp";
-        }
-    }
-    return encoder;
-}
-
 }  // namespace
 
 // ====================================================================== export
@@ -152,10 +136,7 @@ void App::drawExport() {
     ImGui::SameLine();
     if (ImGui::Button("Batch...")) pendingDialog_ = Dialog::BatchFolder;
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render every shader file in a folder into its renders/ subfolder");
-    if (e.format >= 2 && media::findTool("ffmpeg").empty())
-        ImGui::TextColored(col(colors::Error), "ffmpeg not found (macOS: brew install ffmpeg)");
-    else if (e.format == 5 && webpEncoder(media::findTool("ffmpeg")).empty())
-        ImGui::TextColored(col(colors::Error), "This ffmpeg has no WebP encoder (needs a build with libwebp)");
+    drawFfmpegSetup(e.format);
     if (!e.status.empty()) ImGui::TextWrapped("%s", e.status.c_str());
 
     if (askOverwrite_) {
@@ -232,7 +213,7 @@ bool App::startExport() {
         const std::string ffmpeg = media::findTool("ffmpeg");
         if (ffmpeg.empty()) return fail("ffmpeg not found.");
         if (e.format == 5 && webpEncoder(ffmpeg).empty())
-            return fail("This ffmpeg has no WebP encoder; install a build with libwebp (e.g. winget install Gyan.FFmpeg).");
+            return fail("This ffmpeg has no WebP encoder; use Install ffmpeg in the Export window.");
         char size[32], rate[32];
         std::snprintf(size, sizeof(size), "%dx%d", e.width, e.height);
         std::snprintf(rate, sizeof(rate), "%.4f", e.fps);

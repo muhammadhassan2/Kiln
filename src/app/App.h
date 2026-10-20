@@ -216,6 +216,12 @@ private:
     std::string exportStem() const;  // project name, else Image pass file name, else "untitled"
     void ensureExportOutput();       // fills an empty output path from folder + stem + format
     void requestRender();            // asks before overwriting, then starts the export
+    // ---- tool setup (AppSetup.cpp)
+    void chooseFfmpeg();         // prefers an ffmpeg with WebP among every copy found
+    void startFfmpegInstall();   // winget / brew, in the background
+    void pollFfmpegInstall();
+    void drawFfmpegSetup(int format);
+
     // ---- batch render (AppBatch.cpp)
     bool loadBatchFolder(const fs::path& folder);
     void startBatch(bool onlyFailed);
@@ -373,6 +379,10 @@ private:
         fs::path output;
         bool withAudio = true;
     } batch_;
+    std::string ffmpegPath_;
+    bool ffmpegWebp_ = false;
+    std::vector<std::string> installCmd_;  // empty when no package manager is available
+    std::future<std::pair<int, std::string>> ffmpegInstall_;
     fs::path pendingBatch_;  // SHADER_STUDIO_BATCH folder, started after the first frames
     int exitCode_ = 0;
 

@@ -45,6 +45,9 @@ inline std::string nowString() {
     return buf;
 }
 
+// Name of the animated-WebP encoder this ffmpeg has ("" if none). Cached per executable.
+const std::string& webpEncoder(const std::string& ffmpeg);
+
 inline std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
     return s;

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <sstream>
 
 #if defined(_WIN32)
@@ -192,13 +193,18 @@ int runCapture(const std::vector<std::string>& argv, std::string& output, bool m
     return p.wait();
 }
 
-std::string findTool(const std::string& name) {
+namespace {
+
+std::mutex gToolMutex;
+std::map<std::string, std::string> gToolOverrides;  // name -> chosen executable (e.g. an ffmpeg with libwebp)
+
+// Folders that hold command-line tools, PATH first. On Windows this adds the places package managers
+// put them, because a fresh winget/Scoop/Chocolatey install isn't on this process's PATH yet.
+std::vector<fs::path> toolDirs() {
 #if defined(_WIN32)
     const char sep = ';';
-    const std::string exe = name + ".exe";
 #else
     const char sep = ':';
-    const std::string exe = name;
 #endif
     std::vector<fs::path> dirs;
     if (const char* path = std::getenv("PATH")) {
@@ -207,13 +213,62 @@ std::string findTool(const std::string& name) {
         while (std::getline(ss, d, sep))
             if (!d.empty()) dirs.emplace_back(d);
     }
+#if defined(_WIN32)
+    std::error_code ec;
+    if (const char* local = std::getenv("LOCALAPPDATA")) {
+        const fs::path winget = fs::path(local) / "Microsoft" / "WinGet";
+        dirs.push_back(winget / "Links");
+        // winget "portable" packages: Packages/<id>/<version folder>/bin
+        for (fs::directory_iterator pkg(winget / "Packages", ec), end; !ec && pkg != end; pkg.increment(ec))
+            for (fs::directory_iterator ver(pkg->path(), ec), end2; !ec && ver != end2; ver.increment(ec))
+                if (ver->is_directory(ec)) dirs.push_back(ver->path() / "bin");
+        ec.clear();
+    }
+    if (const char* home = std::getenv("USERPROFILE")) dirs.push_back(fs::path(home) / "scoop" / "shims");
+    if (const char* data = std::getenv("ProgramData")) dirs.push_back(fs::path(data) / "chocolatey" / "bin");
+    dirs.emplace_back("C:/ffmpeg/bin");
+#else
     for (const char* d : {"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/opt/local/bin"}) dirs.emplace_back(d);
-    for (const auto& d : dirs) {
+#endif
+    return dirs;
+}
+
+}  // namespace
+
+void setToolPath(const std::string& name, const std::string& path) {
+    std::lock_guard<std::mutex> lock(gToolMutex);
+    if (path.empty()) gToolOverrides.erase(name);
+    else gToolOverrides[name] = path;
+}
+
+std::vector<std::string> findToolCandidates(const std::string& name) {
+#if defined(_WIN32)
+    const std::string exe = name + ".exe";
+#else
+    const std::string exe = name;
+#endif
+    std::vector<std::string> out;
+    for (const auto& d : toolDirs()) {
         std::error_code ec;
         const fs::path p = d / exe;
-        if (fs::exists(p, ec) && !fs::is_directory(p, ec)) return p.string();
+        if (!fs::exists(p, ec) || fs::is_directory(p, ec)) continue;
+        // The same exe can be reachable twice (e.g. a winget link and its package folder).
+        const std::string canon = fs::weakly_canonical(p, ec).string();
+        bool seen = false;
+        for (const auto& o : out) seen = seen || fs::weakly_canonical(o, ec).string() == canon;
+        if (!seen) out.push_back(p.string());
     }
-    return {};
+    return out;
+}
+
+std::string findTool(const std::string& name) {
+    {
+        std::lock_guard<std::mutex> lock(gToolMutex);
+        auto it = gToolOverrides.find(name);
+        if (it != gToolOverrides.end()) return it->second;
+    }
+    auto all = findToolCandidates(name);
+    return all.empty() ? std::string() : all.front();
 }
 
 fs::path tempDir() {

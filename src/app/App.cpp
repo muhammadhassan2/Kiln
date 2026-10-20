@@ -56,8 +56,7 @@ App::App(GLFWwindow* window, Fonts fonts) : window_(window), fonts_(fonts) {
 
     lastClock_ = glfwGetTime();
     log(Level::Info, device_->name() + " · max " + std::to_string(device_->maxTextureUnits()) + " texture units");
-    if (media::findTool("ffmpeg").empty())
-        log(Level::Warn, "ffmpeg not found: video, camera, audio and MP4/GIF/WebP export need it (macOS: brew install ffmpeg)");
+    chooseFfmpeg();
 
     // Window layout lives with the other settings, not in the working directory.
     {
@@ -122,6 +121,7 @@ void App::shutdown() {
     if (done) return;
     done = true;
     abortBatchNow();  // restore the user's project before it is autosaved
+    if (ffmpegInstall_.valid()) ffmpegInstall_.wait();  // don't abandon winget mid-install
     if (export_.finishing.valid()) export_.finishing.wait();  // let ffmpeg finish the last export
     pollExportFinish();
     std::error_code ec;
@@ -439,6 +439,7 @@ void App::update() {
         pendingBatch_.clear();
     }
     pollExportFinish();
+    pollFfmpegInstall();
     if (batch_.active) stepBatch();
 
     const double now = glfwGetTime();

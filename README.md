@@ -26,6 +26,8 @@ CMake downloads these dependencies the first time you configure, each pinned to 
 
 **Runtime tools** (optional; the features below are disabled without them):
 
+The app sets ffmpeg up for you: at startup it checks every ffmpeg it can find (PATH, plus winget, Scoop and Chocolatey folders on Windows) and uses one that can also write WebP. If there is none, the Export window shows **Install ffmpeg**, which runs `winget install Gyan.FFmpeg` (or Scoop / Chocolatey) on Windows, `brew install ffmpeg` (or MacPorts) on macOS, or `apt` / `dnf` / `pacman` / `zypper` through the system password prompt on Linux. The new ffmpeg is picked up without restarting.
+
 | Tool | Used for | macOS install |
 |---|---|---|
 | `ffmpeg` / `ffprobe` / `ffplay` | Video, camera and audio textures; MP4/ProRes/GIF/WebP export (WebP needs an ffmpeg built with libwebp); hearing audio while you preview | `brew install ffmpeg` |
