@@ -1,6 +1,25 @@
 # Kiln
 
+<p align="center"><img src="packaging/macos/AppIcon.png" width="128" alt="Kiln app icon"></p>
+
 A live shader editor in the style of KodeLife, built for mobile video effect and transition development. It runs on desktop OpenGL 4.1 core. The rendering code sits behind a small interface (`src/rhi`), so a Metal renderer can be added later as a new folder.
+
+## Screenshots
+
+![Kiln editing a GLSL ES video effect at 1080×1920, with a photo texture, live sliders and a colour control](docs/screenshots/01-editor.png)
+*Editing a mobile video effect (GLSL ES 1.00) with the iPhone preset: code on the left, the 1080×1920 preview, textures and live uniform controls on the right. The mobile ES check runs on every compile.*
+
+![The Add uniform dialog creating a colour control](docs/screenshots/02-add-uniform.png)
+*Uniforms → **+ Add uniform** writes the declaration and its control comment into the current pass. Sliders, integer sliders, toggles, colours and vectors are available.*
+
+![A Shadertoy-style shader with three annotated uniforms as sliders and a colour picker](docs/screenshots/03-shadertoy.png)
+*Shadertoy `mainImage()` shaders run as they are. `// @slider` and `// @color` comments become controls. This shader is [`examples/molten.frag`](examples/molten.frag).*
+
+![The Mobile / Metal panel showing the shader converted to Metal Shading Language](docs/screenshots/04-metal.png)
+*Mobile / Metal: GLSL ES validation plus conversion to MSL for iOS or macOS through glslang and SPIRV-Cross, with a button to check the result with Xcode's `metal` compiler.*
+
+![Overlay mode: code drawn over the full-screen output](docs/screenshots/05-overlay.png)
+*Overlay mode (F2): the code floats over the full-screen output, KodeLife-style. Esc goes back.*
 
 ## Build
 

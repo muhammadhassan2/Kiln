@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>      <string>en</string>
+    <key>CFBundleExecutable</key>             <string>@APP_NAME@</string>
+    <key>CFBundleName</key>                   <string>@APP_NAME@</string>
+    <key>CFBundleDisplayName</key>            <string>@APP_NAME@</string>
+    <key>CFBundleIdentifier</key>             <string>@APP_BUNDLE_ID@</string>
+    <key>CFBundleIconFile</key>               <string>AppIcon</string>
+    <key>CFBundlePackageType</key>            <string>APPL</string>
+    <key>CFBundleShortVersionString</key>     <string>@PROJECT_VERSION@</string>
+    <key>CFBundleVersion</key>                <string>@PROJECT_VERSION@</string>
+    <key>CFBundleInfoDictionaryVersion</key>  <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>         <string>11.0</string>
+    <key>LSApplicationCategoryType</key>      <string>public.app-category.developer-tools</string>
+    <key>NSHighResolutionCapable</key>        <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key> <true/>
+    <key>NSHumanReadableCopyright</key>       <string>@APP_COPYRIGHT@</string>
+
+    <!-- Camera / microphone textures run ffmpeg as a child process; macOS asks for permission
+         on behalf of this app and shows these texts. Without them the request is denied. -->
+    <key>NSCameraUsageDescription</key>
+    <string>@APP_NAME@ uses the camera as a live texture for your shaders.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>@APP_NAME@ uses the microphone to drive audio-reactive shaders.</string>
+
+    <!-- Project files belong to this app; shader files can be opened with it. -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>        <string>@APP_BUNDLE_ID@.project</string>
+            <key>UTTypeDescription</key>       <string>@APP_NAME@ Project</string>
+            <key>UTTypeConformsTo</key>        <array><string>public.json</string></array>
+            <key>UTTypeIconFile</key>          <string>AppIcon</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key> <array><string>kiln</string><string>ssproj</string></array>
+            </dict>
+        </dict>
+    </array>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>        <string>@APP_NAME@ Project</string>
+            <key>CFBundleTypeRole</key>        <string>Editor</string>
+            <key>LSHandlerRank</key>           <string>Owner</string>
+            <key>LSItemContentTypes</key>      <array><string>@APP_BUNDLE_ID@.project</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>        <string>Shader Source</string>
+            <key>CFBundleTypeRole</key>        <string>Editor</string>
+            <key>LSHandlerRank</key>           <string>Alternate</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>frag</string><string>fs</string><string>glsl</string><string>fsh</string><string>metal</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
