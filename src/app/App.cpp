@@ -57,7 +57,7 @@ App::App(GLFWwindow* window, Fonts fonts) : window_(window), fonts_(fonts) {
     lastClock_ = glfwGetTime();
     log(Level::Info, device_->name() + " · max " + std::to_string(device_->maxTextureUnits()) + " texture units");
     if (media::findTool("ffmpeg").empty())
-        log(Level::Warn, "ffmpeg not found: video, camera, audio and MP4 export need it (macOS: brew install ffmpeg)");
+        log(Level::Warn, "ffmpeg not found: video, camera, audio and MP4/GIF/WebP export need it (macOS: brew install ffmpeg)");
 
     // Window layout lives with the other settings, not in the working directory.
     {
@@ -81,11 +81,16 @@ App::App(GLFWwindow* window, Fonts fonts) : window_(window), fonts_(fonts) {
     }
     updateTitle();
 
-    // Headless smoke-test hook (CI): SHADER_STUDIO_EXPORT=/path/out.{png,mp4,mov} renders 2 s at 540x960.
+    // Headless smoke-test hook (CI): SHADER_STUDIO_EXPORT=/path/out.{png,mp4,mov,gif,webp} renders 2 s at 540x960.
     if (const char* out = std::getenv("SHADER_STUDIO_EXPORT"); out && *out) {
         export_.output = out;
         const std::string ext = lower(export_.output.extension().string());
-        export_.format = ext == ".png" ? 0 : ext == ".mov" ? 3 : ext.empty() ? 1 : 2;
+        export_.format = ext == ".png"  ? 0
+                       : ext == ".mov"  ? 3
+                       : ext == ".gif"  ? 4
+                       : ext == ".webp" ? 5
+                       : ext.empty()    ? 1
+                                        : 2;
         export_.width = 540;
         export_.height = 960;
         export_.length = 2.0f;

@@ -36,6 +36,22 @@ std::string sanitize(std::string s) {
     return s.empty() ? "untitled" : s;
 }
 
+// Animated WebP needs an ffmpeg built with libwebp (many minimal builds lack it). Returns the encoder
+// name, or "" when there is none. Cached: asking ffmpeg costs a process launch.
+const std::string& webpEncoder(const std::string& ffmpeg) {
+    static std::string checkedFor, encoder;
+    if (checkedFor != ffmpeg) {
+        checkedFor = ffmpeg;
+        encoder.clear();
+        std::string out;
+        if (!ffmpeg.empty() && media::runCapture({ffmpeg, "-hide_banner", "-encoders"}, out) == 0) {
+            if (out.find(" libwebp_anim ") != std::string::npos) encoder = "libwebp_anim";
+            else if (out.find(" libwebp ") != std::string::npos) encoder = "libwebp";
+        }
+    }
+    return encoder;
+}
+
 }  // namespace
 
 // ====================================================================== export
@@ -55,9 +71,10 @@ void App::drawExport() {
         ImGui::End();
         return;
     }
-    static const char* kFormats[] = {"PNG (current frame)", "PNG sequence", "MP4 (H.264)", "MOV (ProRes 422 HQ)"};
+    static const char* kFormats[] = {"PNG (current frame)", "PNG sequence", "MP4 (H.264)", "MOV (ProRes 422 HQ)",
+                                     "GIF (animated)", "WebP (animated)"};
     ImGui::SetNextItemWidth(220);
-    if (ImGui::Combo("Format", &e.format, kFormats, 4)) e.output.clear();
+    if (ImGui::Combo("Format", &e.format, kFormats, 6)) e.output.clear();
 
     static const char* kSizes[] = {"Custom", "Current output", "1080 x 1920", "1920 x 1080", "1080 x 1080", "3840 x 2160"};
     static int sizePreset = 2;
@@ -87,7 +104,15 @@ void App::drawExport() {
     }
     ImGui::SetNextItemWidth(220);
     ImGui::DragFloat(e.format == 0 ? "At time" : "Start", &e.start, 0.05f, 0.0f, 3600.0f, "%.2f s");
-    if (e.format >= 2) ImGui::Checkbox("Include audio (first audio texture)", &e.withAudio);
+    if (e.format == 2 || e.format == 3) ImGui::Checkbox("Include audio (first audio texture)", &e.withAudio);
+    if (e.format == 5) {
+        ImGui::SetNextItemWidth(220);
+        ImGui::SliderInt("Quality", &e.webpQuality, 0, 100);
+        ImGui::SameLine();
+        ImGui::Checkbox("Lossless", &e.webpLossless);
+    }
+    if (e.format == 4)
+        ImGui::TextDisabled("GIF has 256 colours and no audio; keep it short and small (e.g. 540 x 960, 15 fps).");
 
     ImGui::Separator();
     ImGui::TextWrapped("%s", e.output.empty() ? "No output chosen" : e.output.string().c_str());
@@ -100,6 +125,8 @@ void App::drawExport() {
     ImGui::EndDisabled();
     if (e.format >= 2 && media::findTool("ffmpeg").empty())
         ImGui::TextColored(col(colors::Error), "ffmpeg not found (macOS: brew install ffmpeg)");
+    else if (e.format == 5 && webpEncoder(media::findTool("ffmpeg")).empty())
+        ImGui::TextColored(col(colors::Error), "This ffmpeg has no WebP encoder (needs a build with libwebp)");
     if (!e.status.empty()) ImGui::TextWrapped("%s", e.status.c_str());
     ImGui::End();
 }
@@ -123,13 +150,18 @@ void App::startExport() {
             e.status = "ffmpeg not found.";
             return;
         }
+        if (e.format == 5 && webpEncoder(ffmpeg).empty()) {
+            e.status = "This ffmpeg has no WebP encoder; install a build with libwebp (e.g. winget install Gyan.FFmpeg).";
+            log(Level::Error, e.status);
+            return;
+        }
         char size[32], rate[32];
         std::snprintf(size, sizeof(size), "%dx%d", e.width, e.height);
         std::snprintf(rate, sizeof(rate), "%.4f", e.fps);
         std::vector<std::string> args = {ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo",
                                          "-pix_fmt", "rgba", "-s", size, "-r", rate, "-i", "-"};
         fs::path audio;
-        if (e.withAudio)
+        if (e.withAudio && (e.format == 2 || e.format == 3))
             for (auto& s : textures_->slots())
                 if (s.kind == textures::SourceKind::AudioFile) {
                     audio = s.path;
@@ -138,12 +170,20 @@ void App::startExport() {
         if (!audio.empty())
             args.insert(args.end(), {"-ss", std::to_string(e.start), "-t", std::to_string(e.length), "-i", audio.string(),
                                      "-map", "0:v", "-map", "1:a"});
-        args.insert(args.end(), {"-vf", "vflip"});  // GL readback is bottom-up
+        // GL readback is bottom-up. GIF: build one 256-colour palette from the whole clip, then map every
+        // frame to it (far better than ffmpeg's default fixed palette).
+        args.insert(args.end(), {"-vf", e.format == 4 ? "vflip,split[a][b];[a]palettegen[p];[b][p]paletteuse" : "vflip"});
         if (e.format == 2)
             args.insert(args.end(), {"-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
                                      "-movflags", "+faststart"});
-        else
+        else if (e.format == 3)
             args.insert(args.end(), {"-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le"});
+        else if (e.format == 4)
+            args.insert(args.end(), {"-c:v", "gif", "-loop", "0"});
+        else  // the WebP muxer plays once by default; -loop 0 repeats forever like GIF
+            args.insert(args.end(), {"-c:v", webpEncoder(ffmpeg), "-pix_fmt", e.webpLossless ? "bgra" : "yuva420p",
+                                     "-lossless", e.webpLossless ? "1" : "0", "-quality", std::to_string(e.webpQuality),
+                                     "-compression_level", "4", "-loop", "0"});
         if (!audio.empty()) args.insert(args.end(), {"-c:a", e.format == 2 ? "aac" : "pcm_s16le"});
         // Cap the output length instead of -shortest: ffmpeg must keep reading stdin until we close it.
         args.insert(args.end(), {"-t", std::to_string(e.length), e.output.string()});
